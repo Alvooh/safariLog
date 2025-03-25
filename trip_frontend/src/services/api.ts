@@ -2,7 +2,7 @@ import axios from 'axios';
 import type { TripFormData, TripSummary } from '../types/trip';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: 'https://safarilog.onrender.com/api',
 });
 
 export const tripService = {

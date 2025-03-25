@@ -21,7 +21,7 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler // Register the Filler plugin
+  Filler 
 );
 
 interface LogData {

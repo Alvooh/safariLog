@@ -21,7 +21,7 @@ interface Trip {
   pickup_location: string;
   dropoff_location: string;
   cycle_hours: number;
-  created_at: string; // Date as a string from the API
+  created_at: string; 
 }
 
 const DashboardPage = () => {
@@ -42,7 +42,7 @@ const DashboardPage = () => {
     const fetchData = async () => {
       try {
         // Fetch all trips
-        const tripsRes = await axios.get('http://127.0.0.1:8000/api/trips/');
+        const tripsRes = await axios.get('https://safarilog.onrender.com/api/trips/');
         const trips = tripsRes.data;
 
         // Debug: Log the API response

@@ -20,6 +20,8 @@ const TripSummaryPage: React.FC<TripSummaryPageProps> = ({ tripSubmitted }) => {
 
   const [trip, setTrip] = useState<TripSummary | null>(null);
   const [isClient, setIsClient] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchTrip = async () => {
@@ -27,8 +29,12 @@ const TripSummaryPage: React.FC<TripSummaryPageProps> = ({ tripSubmitted }) => {
         const data = await tripService.getTrip(tripId);
         console.log("Fetched Trip Data:", data);
         setTrip(data);
+        setError(null);
       } catch (error) {
         console.error("Error fetching trip details:", error);
+        setError("Failed to load trip details. Please try again later.");
+      } finally {
+        setLoading(false);
       }
     };
     fetchTrip();
@@ -38,39 +44,41 @@ const TripSummaryPage: React.FC<TripSummaryPageProps> = ({ tripSubmitted }) => {
     setIsClient(true);
   }, []);
 
-  if (!trip) return <p>Loading trip details...</p>;
+  if (loading) return <p>Loading trip details...</p>;
+  if (error) return <p className="text-red-500">{error}</p>;
+  if (!trip) return <p>No trip data available.</p>;
+  if (!trip.route) return <p>Route information is missing.</p>;
 
   const { route, logs } = trip;
 
-  // Extract start and end coordinates from the route
-  const startCoordinates: LatLngTuple = [
-    parseFloat(route.start_location.split(",")[0]),
-    parseFloat(route.start_location.split(",")[1]),
-  ];
-  const endCoordinates: LatLngTuple = [
-    parseFloat(route.end_location.split(",")[0]),
-    parseFloat(route.end_location.split(",")[1]),
-  ];
+  // Safe coordinate extraction with fallbacks
+  const getCoordinates = (locationString?: string): LatLngTuple | null => {
+    if (!locationString) return null;
+    const parts = locationString.split(",");
+    if (parts.length !== 2) return null;
+    
+    const lat = parseFloat(parts[0]);
+    const lng = parseFloat(parts[1]);
+    
+    if (isNaN(lat) || isNaN(lng)) return null;
+    
+    return [lat, lng];
+  };
 
-  // Combine start, stops, and end coordinates into polylinePositions
-  const polylinePositions: LatLngTuple[] = [
-    startCoordinates,
-    ...route.stops
-      .map((stop) => {
-        if (!stop.location) {
-          console.warn("Missing location for stop:", stop);
-          return null;
-        }
-        const [lat, lng] = stop.location.split(",").map(Number);
-        if (isNaN(lat) || isNaN(lng)) {
-          console.warn("Invalid coordinates:", stop.location);
-          return null;
-        }
-        return [lat, lng] as LatLngTuple;
-      })
-      .filter((coord): coord is LatLngTuple => coord !== null), // Filter out null values
-    endCoordinates,
-  ];
+  const startCoordinates = getCoordinates(route.start_location);
+  const endCoordinates = getCoordinates(route.end_location);
+
+  // Combine coordinates into polylinePositions
+  const polylinePositions: LatLngTuple[] = [];
+  
+  if (startCoordinates) polylinePositions.push(startCoordinates);
+  
+  route.stops.forEach((stop) => {
+    const coords = getCoordinates(stop.location);
+    if (coords) polylinePositions.push(coords);
+  });
+
+  if (endCoordinates) polylinePositions.push(endCoordinates);
 
   const defaultCenter: LatLngTuple = [1.2921, 36.8219]; // Default center (Nairobi, Kenya)
   const defaultZoom = 7;
@@ -81,33 +89,40 @@ const TripSummaryPage: React.FC<TripSummaryPageProps> = ({ tripSubmitted }) => {
     <div className="container mx-auto p-6">
       <h1 className="text-3xl font-bold text-blue-900 mb-6">Trip Summary</h1>
 
-      {isClient && polylinePositions.length > 0 ? (
+      {isClient ? (
         <MapContainer center={mapCenter} zoom={defaultZoom} className="h-96 w-full mb-6">
           <TileLayer
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           />
-          <Polyline positions={polylinePositions} color="blue" />
+          {polylinePositions.length > 1 && (
+            <Polyline positions={polylinePositions} color="blue" />
+          )}
 
           {/* Marker for Start Point */}
-          <Marker position={startCoordinates}>
-            <Popup>Start Point</Popup>
-          </Marker>
+          {startCoordinates && (
+            <Marker position={startCoordinates}>
+              <Popup>Start Point</Popup>
+            </Marker>
+          )}
 
           {/* Marker for End Point */}
-          <Marker position={endCoordinates}>
-            <Popup>End Point</Popup>
-          </Marker>
+          {endCoordinates && (
+            <Marker position={endCoordinates}>
+              <Popup>End Point</Popup>
+            </Marker>
+          )}
 
           {/* Markers for Stops */}
           {route.stops.map((stop, index) => {
-            if (!stop.location) return null;
-            const [lat, lng] = stop.location.split(",").map(Number);
-            if (isNaN(lat) || isNaN(lng)) return null;
+            const coords = getCoordinates(stop.location);
+            if (!coords) return null;
+            
             return (
-              <Marker key={index} position={[lat, lng]}>
+              <Marker key={index} position={coords}>
                 <Popup>
-                  {stop.type === "fuel" ? "Fuel Stop" : "Rest Stop"} <br /> {stop.location}
+                  {stop.type === "fuel" ? "Fuel Stop" : "Rest Stop"} <br /> 
+                  {stop.location}
                 </Popup>
               </Marker>
             );
@@ -118,15 +133,19 @@ const TripSummaryPage: React.FC<TripSummaryPageProps> = ({ tripSubmitted }) => {
       )}
 
       <div className="bg-white p-4 shadow-lg rounded-lg">
-        <p><strong>Distance:</strong> {route.distance} miles</p>
-        <p><strong>Estimated Time:</strong> {route.duration} hours</p>
-        <p><strong>Stops:</strong> {route.stops.length} (Fuel & Rest)</p>
+        <p><strong>Distance:</strong> {route.distance || 'N/A'} miles</p>
+        <p><strong>Estimated Time:</strong> {route.duration || 'N/A'} hours</p>
+        <p><strong>Stops:</strong> {route.stops.length || 0} (Fuel & Rest)</p>
       </div>
 
       <h2 className="text-2xl font-semibold mt-6">Electronic Log Sheets</h2>
-      {logs.map((log, index) => (
-        <LogSheet key={index} logData={log} />
-      ))}
+      {logs?.length > 0 ? (
+        logs.map((log, index) => (
+          <LogSheet key={index} logData={log} />
+        ))
+      ) : (
+        <p>No log entries available.</p>
+      )}
     </div>
   );
 };
